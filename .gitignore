@@ -1,0 +1,17 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 日志与临时文件
+*.log
+*.tmp
+*.zip
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/

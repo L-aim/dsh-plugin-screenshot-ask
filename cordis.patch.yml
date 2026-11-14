@@ -1,0 +1,5 @@
+# 截图提问 · bundle patch
+# 只做一件事：把本插件 insert 进 profile composition。
+- insert:
+    - id: screenshot-ask
+      name: 'dsh-plugin-screenshot-ask'
