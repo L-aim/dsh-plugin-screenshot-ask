@@ -10,6 +10,14 @@
     "region-select",
     "windows"
   ],
+  "homepage": "https://github.com/L-aim/dsh-plugin-screenshot-ask#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/L-aim/dsh-plugin-screenshot-ask.git"
+  },
+  "bugs": {
+    "url": "https://github.com/L-aim/dsh-plugin-screenshot-ask/issues"
+  },
   "author": "L-aim",
   "license": "MIT",
   "type": "module",
