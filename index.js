@@ -213,24 +213,58 @@ function writeJson(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
-/** 只允许本机页面 POST：同源 fetch 会带 Origin，curl 之类没有 Origin 的一律拒掉。 */
+/**
+ * webServer.register 拿到的就是原生 req/res，DSH 的 Host/Origin 准入不会自动套上来
+ * （dsh-host-webserver 的 register 只是把路由塞进路由表）。所以每条路由入口都显式
+ * 调一次 connection.requestRejection —— 它做的正是 DSH 对自家 /api 路由做的那套检查
+ * （Host/Origin 校验 + 浏览器凭证），返回 401/403 就必须拒。
+ *
+ * 拿不到 connection 服务时退回「只认同源」的本地检查，并且拒绝没有 Origin 的请求；
+ * 宁可少放行，也不给本机脚本留后门。
+ */
+let connectionRef
+
+function sameOriginOnly(req, res) {
+  const origin = req.headers.origin
+  if (typeof origin !== 'string' || origin.length === 0) {
+    writeJson(res, 403, { ok: false, code: 'untrusted', message: '请求缺少 Origin，已被拒绝' })
+    return false
+  }
+  let hostname = ''
+  try {
+    hostname = new URL(origin).hostname
+  } catch {
+    hostname = ''
+  }
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') {
+    writeJson(res, 403, { ok: false, code: 'origin', message: '来源不被允许' })
+    return false
+  }
+  return true
+}
+
 function guard(req, res) {
   if (req.method !== 'POST') {
     writeJson(res, 405, { ok: false, code: 'method', message: '只接受 POST' })
     return false
   }
-  const origin = req.headers.origin
-  if (typeof origin === 'string' && origin.length > 0) {
-    let hostname = ''
-    try {
-      hostname = new URL(origin).hostname
-    } catch {
-      hostname = ''
-    }
-    if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') {
-      writeJson(res, 403, { ok: false, code: 'origin', message: '来源不被允许' })
-      return false
-    }
+  if (connectionRef === undefined || typeof connectionRef.requestRejection !== 'function') {
+    beat('guard: connection 服务不可用，退回同源检查')
+    return sameOriginOnly(req, res)
+  }
+  let rejection
+  try {
+    rejection = connectionRef.requestRejection({ headers: req.headers })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    beat(`guard: requestRejection 抛错（${message}），拒绝请求`)
+    writeJson(res, 403, { ok: false, code: 'untrusted', message: '请求未通过 DSH 的准入检查' })
+    return false
+  }
+  if (rejection === 401 || rejection === 403) {
+    beat(`guard: 请求被 DSH 拒绝（${rejection}）`)
+    writeJson(res, rejection, { ok: false, code: 'untrusted', message: '请求未通过 DSH 的准入检查' })
+    return false
   }
   return true
 }
@@ -324,6 +358,13 @@ async function handleCapture(req, res) {
 // ---------------------------------------------------------------- plugin
 
 export function apply(ctx) {
+  // connection 服务用来给自家路由补上 DSH 的准入检查；它缺失时 guard() 会退回同源检查，
+  // 所以这里不把它做成硬依赖，避免老版本 DSH 上整条链路挂掉。
+  connectionRef = ctx.get('connection')
+  if (connectionRef === undefined || typeof connectionRef.requestRejection !== 'function') {
+    beat('apply: 没有可用的 connection.requestRejection，路由将退回同源检查')
+  }
+
   ctx.inject(['webServer'], (sctx) => {
     sctx.effect(() => {
       const disposeCapture = sctx.webServer.register({ kind: 'exact', path: CAPTURE_ROUTE, handler: handleCapture })

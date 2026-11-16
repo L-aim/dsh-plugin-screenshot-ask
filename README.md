@@ -61,8 +61,13 @@ plugin_manager set_bundle  target=dsh-plugin-screenshot-ask  enabled=true
        原生附件链路：缩略图 → 上传 → 发送（与手动拖图完全一致）
 ```
 
-两个关键取舍：
+三个关键取舍：
 
+- **路由自己补上 DSH 的准入检查**：`webServer.register` 拿到的是原生 `req`/`res`，DSH 的
+  Host/Origin 校验与浏览器凭证**不会**自动套到这类路由上。所以每条路由入口都显式调用
+  `connection.requestRejection({ headers })`，返回 `401`/`403` 就直接拒——本机任何脚本
+  裸 POST 都打不进来（实测无凭证 `401`、外站 Origin `403`）。取不到 `connection` 服务时
+  退回「只认同源且必须带 Origin」的本地检查，宁可少放行。
 - **不碰未公开 API**：图片进输入框靠的是「模拟一次拖放」。`ui-attachment` 在 `document` 上
   监听 `drop`，只看 `dataTransfer.types` 是否含 `Files`，所以页面里自己造事件就够了，
   缩略图、上传、发送全走原生链路。
